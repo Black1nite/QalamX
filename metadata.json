@@ -1,5 +1,7 @@
 {
-  "name": "QalamX",
-  "description": "A hybrid minimalist AI chat interface featuring a deep space dark mode, dual-model reasoning capabilities, and a responsive RTL/LTR design.",
-  "requestFramePermissions": []
+  "name": "Gemini-DeepSeek UI Merge",
+  "description": "A sophisticated chat interface combining the best UI elements of ChatGPT and DeepSeek, featuring reasoning visualization and Arabic RTL support.",
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

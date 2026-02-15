@@ -1,158 +1,148 @@
-import React, { useState } from 'react';
-import { Sender, Message, ModelType } from '../types';
-import { ChevronDown, ChevronRight, Brain, Sparkles, Copy, RefreshCw, Terminal, Check } from 'lucide-react';
-import { MODEL_CONFIGS } from '../constants';
+import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Role, Message } from '../types';
+import { Copy, RefreshCw, ChevronRight, Terminal, Feather, FileText } from 'lucide-react';
+import { TRANSLATIONS, Language } from '../constants';
 
 interface MessageBubbleProps {
   message: Message;
-  isLast: boolean;
-  language: string;
+  lang: Language;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isLast, language }) => {
-  const isUser = message.sender === Sender.User;
-  const isRTL = language === 'ar';
-  
-  // State for collapsible thinking block
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, lang }) => {
+  const isUser = message.role === Role.USER;
+  const t = TRANSLATIONS[lang];
   const [isThinkingOpen, setIsThinkingOpen] = useState(true);
-  const [copied, setCopied] = useState(false);
+  
+  useEffect(() => {
+      if (!message.isThinking && message.content) {
+          setIsThinkingOpen(false);
+      }
+  }, [message.isThinking, message.content]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.finalContent || message.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Determine direction for the specific message content
+  const contentDir = message.content && /[\u0600-\u06FF]/.test(message.content.substring(0, 50)) ? 'rtl' : 'ltr';
+
+  const copyToClipboard = () => {
+      if (message.content) {
+          navigator.clipboard.writeText(message.content);
+      }
   };
 
   if (isUser) {
-    return (
-      <div className={`flex w-full mb-8 ${isRTL ? 'justify-start' : 'justify-end'} animate-slide-up-fade`}>
-        <div className={`
-          max-w-[85%] md:max-w-[70%] rounded-[20px] px-6 py-4
-          bg-[#1A1A1A] border border-white/5 text-[#E5E7EB]
-          shadow-[0_4px_20px_rgba(0,0,0,0.2)]
-          ${isRTL ? 'rounded-br-sm' : 'rounded-bl-sm'}
-        `}>
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3">
-               {message.attachments.map((att, i) => (
-                 <div key={i} className="bg-black/30 rounded-lg p-1 overflow-hidden border border-white/5">
-                    {att.type.startsWith('image') ? (
-                      <img src={`data:${att.type};base64,${att.data}`} alt="attachment" className="h-32 rounded-md object-cover" />
-                    ) : (
-                      <div className="px-4 py-2 flex items-center gap-2">
-                          <div className="w-8 h-8 bg-white/10 rounded flex items-center justify-center">📄</div>
-                          <span className="text-xs text-gray-300 font-mono">{att.name}</span>
-                      </div>
-                    )}
-                 </div>
-               ))}
-            </div>
-          )}
-          <div className="whitespace-pre-wrap leading-relaxed text-[15px] md:text-[16px] font-normal tracking-wide">
-            {message.text}
-          </div>
+      return (
+        <div className="w-full py-4 px-4 flex justify-end">
+             <div className="max-w-[85%] md:max-w-[75%] bg-[#252529] text-[#E1E1E3] px-5 py-4 rounded-[20px] rounded-br-sm shadow-md border border-white/5 flex flex-col gap-3">
+                {/* Real Image Preview for User */}
+                {message.attachment && message.attachment.type.startsWith('image/') && (
+                    <div className="rounded-lg overflow-hidden border border-white/10 mb-1 max-w-full">
+                        <img 
+                            src={`data:${message.attachment.type};base64,${message.attachment.data}`} 
+                            alt="User upload" 
+                            className="max-h-[300px] w-auto object-contain bg-black/50"
+                        />
+                    </div>
+                )}
+                 {/* Real File Icon for User */}
+                 {message.attachment && !message.attachment.type.startsWith('image/') && (
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                        <FileText size={20} className="text-blue-400" />
+                        <span className="text-sm truncate max-w-[200px]">{message.attachment.name}</span>
+                    </div>
+                )}
+                
+                {message.content && (
+                    <div 
+                        className="text-[15px] leading-relaxed whitespace-pre-wrap font-sans text-left dir-auto" 
+                        dir={contentDir}
+                        style={{ textAlign: contentDir === 'rtl' ? 'right' : 'left' }}
+                    >
+                        {message.content}
+                    </div>
+                )}
+             </div>
         </div>
-      </div>
-    );
+      );
   }
 
-  // Model Message Logic
-  const ModelIcon = message.modelUsed === ModelType.Pro ? Brain : Sparkles;
-  const modelColorClass = message.modelUsed === ModelType.Pro ? 'text-thinking' : 'text-primary';
-  const modelGlowClass = message.modelUsed === ModelType.Pro ? 'shadow-thinking-glow/20' : 'shadow-primary-glow/20';
-
+  // Model Response (QalamX)
   return (
-    <div className={`flex w-full mb-10 gap-4 ${isRTL ? 'flex-row' : 'flex-row-reverse'} justify-end group animate-slide-up-fade`}>
-      <div className="flex-1 max-w-4xl min-w-0">
+    <div className="w-full py-4 px-4 flex justify-start animate-fade-in group">
+      <div className="max-w-4xl w-full flex gap-4">
         
-        {/* Model Header */}
-        <div className="flex items-center gap-2 mb-3 ml-1">
-           <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${modelColorClass} flex items-center gap-2 bg-white/5 px-2 py-1 rounded-md border border-white/5`}>
-             <ModelIcon size={10} />
-             {MODEL_CONFIGS[message.modelUsed || ModelType.Lite].name}
-           </span>
+        {/* Avatar */}
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center mt-1 shadow-glow ring-1 ring-white/10">
+            <Feather size={16} className="text-white" strokeWidth={2.5} />
         </div>
 
-        {/* Thinking Block (Terminal Style) */}
-        {(message.thinkingContent || (message.isThinking && message.modelUsed === ModelType.Pro)) && (
-          <div className="mb-6 overflow-hidden rounded-xl border border-thinking/20 bg-[#080808]">
-            <button 
-              onClick={() => setIsThinkingOpen(!isThinkingOpen)}
-              className="w-full flex items-center gap-3 bg-white/5 px-4 py-2.5 hover:bg-white/10 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                 <Terminal size={14} className="text-thinking" />
-                 <span className="text-xs font-mono text-thinking/80">{isRTL ? 'عمليات التحليل' : 'Process Log'}</span>
-              </div>
-              <div className="flex-1 h-px bg-white/5"></div>
-              {isThinkingOpen ? <ChevronDown size={14} className="text-subtext" /> : <ChevronRight size={14} className="text-subtext" />}
-            </button>
-            
-            {isThinkingOpen && (
-              <div className="p-4 font-mono text-xs md:text-sm text-subtext/70 leading-relaxed overflow-x-auto relative">
-                 <div className="absolute top-0 left-0 w-1 h-full bg-thinking/20"></div>
-                 <div className="pl-3">
-                  {message.thinkingContent || (
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 bg-thinking rounded-full animate-pulse"></span>
-                      <span className="animate-pulse">Analyzing context...</span>
-                    </div>
-                  )}
-                 </div>
+        <div className="flex-1 min-w-0 flex flex-col items-start">
+            <div className="text-xs font-bold text-qalam-subtext mb-2 flex items-center gap-3 select-none">
+                QalamX
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border font-mono tracking-wide ${message.isThinking ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>
+                    {message.isThinking ? t.analyzing : t.completed}
+                </span>
+            </div>
+
+            {/* Technical Thinking Block (Collapsible) */}
+            {message.thinking && (
+                <div className="w-full mb-3 rounded-xl border border-purple-500/20 bg-[#151518] overflow-hidden shadow-inner relative">
+                     {/* Decorative line */}
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-blue-500"></div>
+
+                    <button 
+                        onClick={() => setIsThinkingOpen(!isThinkingOpen)}
+                        className="w-full flex items-center gap-2 px-4 py-2 bg-[#1E1E22] hover:bg-[#252529] transition-colors border-b border-white/5 group-think"
+                    >
+                         <ChevronRight size={14} className={`text-qalam-subtext transition-transform duration-300 ${isThinkingOpen ? 'rotate-90' : ''}`} />
+                         <Terminal size={14} className="text-purple-400" />
+                         <span className="text-xs font-mono font-medium text-qalam-subtext group-think-hover:text-white">{t.thinking}</span>
+                    </button>
+                    
+                    {isThinkingOpen && (
+                        <div className="p-4 bg-[#0F0F10] overflow-x-auto custom-scrollbar">
+                            <div className="font-mono text-xs text-qalam-subtext/90 leading-relaxed whitespace-pre-wrap pl-2" dir="ltr">
+                                {message.thinking}
+                                {message.isThinking && <span className="inline-block w-2 h-4 bg-purple-500 animate-pulse ml-1 align-middle"/>}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Main Content */}
+            <div className="text-[16px] leading-8 text-[#E1E1E3] w-full font-sans" dir={contentDir}>
+                <div className="markdown-body">
+                    {message.content ? (
+                         <ReactMarkdown>{message.content}</ReactMarkdown>
+                    ) : (
+                        !message.isThinking && (
+                             <div className="h-6 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-150"></span>
+                                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce delay-300"></span>
+                             </div>
+                        )
+                    )}
+                </div>
+            </div>
+
+            {/* Action Bar */}
+            {!message.isThinking && message.content && (
+              <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <button onClick={copyToClipboard} className="p-2 text-qalam-subtext/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-2" title={t.copy}>
+                  <Copy size={14} />
+                  <span className="text-xs">{t.copy}</span>
+                </button>
+                <button className="p-2 text-qalam-subtext/50 hover:text-white hover:bg-white/5 rounded-lg transition-colors flex items-center gap-2" title={t.regenerate}>
+                  <RefreshCw size={14} />
+                  <span className="text-xs">{t.regenerate}</span>
+                </button>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Final Content */}
-        <div className="text-[#E5E7EB] leading-7 md:leading-8">
-           {message.finalContent ? (
-             <div className="prose prose-invert prose-p:font-light prose-headings:font-normal prose-strong:text-white max-w-none">
-                <ReactMarkdown>{message.finalContent}</ReactMarkdown>
-             </div>
-           ) : !message.thinkingContent && message.text ? (
-             <div className="prose prose-invert prose-p:font-light prose-headings:font-normal prose-strong:text-white max-w-none">
-                <ReactMarkdown>{message.text}</ReactMarkdown>
-             </div>
-           ) : (
-             !message.thinkingContent && (
-               <div className="flex items-center gap-1.5 h-8">
-                 <div className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"></div>
-                 <div className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce" style={{animationDelay: '100ms'}}></div>
-                 <div className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce" style={{animationDelay: '200ms'}}></div>
-               </div>
-             )
-           )}
-        </div>
-        
-        {/* Actions Footer */}
-        {!message.isThinking && message.finalContent && (
-           <div className="flex gap-4 mt-6 text-subtext/60 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300">
-              <button 
-                onClick={handleCopy}
-                className="hover:text-white transition-colors flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md hover:bg-white/5" 
-                title="Copy"
-              >
-                {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                <span>{copied ? 'Copied' : 'Copy'}</span>
-              </button>
-              <button className="hover:text-white transition-colors flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md hover:bg-white/5" title="Regenerate">
-                <RefreshCw size={14} />
-                <span>Regenerate</span>
-              </button>
-           </div>
-        )}
-      </div>
-
-      {/* Avatar Column */}
-      <div className="flex-shrink-0 mt-1 hidden md:block">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-[#0F0F0F] border border-white/10 shadow-lg ${modelGlowClass}`}>
-          <div className={`w-4 h-4 rounded-sm rotate-45 ${message.modelUsed === ModelType.Pro ? 'bg-thinking' : 'bg-primary'}`}></div>
         </div>
       </div>
     </div>
   );
 };
 
-export default MessageBubble;
+export default React.memo(MessageBubble);

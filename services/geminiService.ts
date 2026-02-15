@@ -1,99 +1,106 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { ModelType, Message, Sender } from "../types";
-import { MODEL_CONFIGS } from "../constants";
+import { GoogleGenAI } from "@google/genai";
+import { Message, ModelType, Role } from "../types";
+import { SYSTEM_INSTRUCTION_REASONING, SYSTEM_INSTRUCTION_STANDARD } from "../constants";
 
-const getSystemInstruction = (modelType: ModelType, language: string) => {
-  const baseInstruction = `You are QalamX, an advanced AI assistant.
-  Current Language Setting: ${language}.
-  Visual Style: Deep Space Dark Mode.
-  
-  Format your responses using Markdown.
-  `;
+// Ensure API key is present
+const apiKey = process.env.API_KEY || '';
 
-  if (modelType === ModelType.Pro) {
-    return baseInstruction + `
-    CRITICAL INSTRUCTION: You are in "Deep Reasoning" mode. 
-    Before providing the final answer, you MUST explicitly show your chain of thought.
-    Wrap your thinking process inside <thinking>...</thinking> XML tags.
-    The content inside <thinking> should be raw, analytical, and monospaced in style (technical).
-    After the thinking block, provide your final polished response.
-    `;
-  }
+const ai = new GoogleGenAI({ apiKey });
 
-  return baseInstruction + `
-  You are in "Lite" mode. Be concise, fast, and helpful. Do not output thinking blocks.
-  `;
-};
-
-export const streamResponse = async (
-  history: Message[],
-  currentMessage: string,
+export const streamChatResponse = async (
+  messages: Message[],
   modelType: ModelType,
-  attachments: { data: string; type: string }[] = [],
-  language: string,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  onComplete: () => void,
+  onError: (error: Error) => void
 ) => {
-  if (!process.env.API_KEY) {
-    console.error("API Key missing");
-    onChunk("Error: API Key not found in environment.");
-    return;
-  }
+  try {
+    // Construct history with real attachment support
+    // We exclude the last message because that is the one we are sending now
+    const history = messages.slice(0, -1).map(msg => {
+      const parts: any[] = [];
+      
+      // Add attachment if exists
+      if (msg.attachment) {
+        parts.push({
+          inlineData: {
+            mimeType: msg.attachment.type,
+            data: msg.attachment.data
+          }
+        });
+      }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const modelId = MODEL_CONFIGS[modelType].id;
+      // Add text content
+      let textContent = msg.content || "";
+      if (msg.thinking) {
+        textContent += `\n<thinking>${msg.thinking}</thinking>`;
+      }
+      
+      // Only add text part if there is content
+      if (textContent && textContent.trim() !== "") {
+        parts.push({ text: textContent });
+      }
 
-  // Prepare contents from history
-  // Note: We need to filter out empty thinking blocks if we want to save token context, 
-  // but for simplicity, we pass the final content as the history text.
-  const historyContents = history.map(msg => ({
-    role: msg.sender === Sender.User ? 'user' : 'model',
-    parts: [{ text: msg.finalContent || msg.text }]
-  }));
+      // If parts is still empty (e.g. empty message), add a placeholder to make it valid
+      if (parts.length === 0) {
+        parts.push({ text: " " });
+      }
 
-  const parts: any[] = [{ text: currentMessage }];
-  
-  // Add attachments if any (Images only for now for simplicity, though Gemini handles more)
-  if (attachments.length > 0) {
-    attachments.forEach(att => {
-      parts.push({
+      return {
+        role: msg.role === Role.USER ? 'user' : 'model',
+        parts: parts,
+      };
+    });
+
+    const lastMessage = messages[messages.length - 1];
+    
+    // Prepare current message parts
+    const currentMessageParts: any[] = [];
+    if (lastMessage.attachment) {
+      currentMessageParts.push({
         inlineData: {
-          mimeType: att.type,
-          data: att.data
+          mimeType: lastMessage.attachment.type,
+          data: lastMessage.attachment.data
         }
       });
-    });
-  }
+    }
+    
+    if (lastMessage.content && lastMessage.content.trim() !== "") {
+      currentMessageParts.push({ text: lastMessage.content });
+    }
 
-  try {
+    // Safety check: ensure we have at least one part
+    if (currentMessageParts.length === 0) {
+       currentMessageParts.push({ text: " " });
+    }
+
+    const systemInstruction = modelType === ModelType.REASONING 
+      ? SYSTEM_INSTRUCTION_REASONING 
+      : SYSTEM_INSTRUCTION_STANDARD;
+
     const chat = ai.chats.create({
-      model: modelId,
-      history: historyContents,
+      model: modelType,
+      history: history,
       config: {
-        systemInstruction: getSystemInstruction(modelType, language),
-        // If it's Pro model (gemini-3-pro), we can enable thinking config if we weren't simulating it via prompt.
-        // For this demo, since we want to parse <thinking> tags specifically for the UI effect, we stick to Prompt Engineering 
-        // combined with the high reasoning model.
-        ...(modelType === ModelType.Pro ? {
-           // We could use thinkingConfig here if we didn't want the manual XML parsing tags, 
-           // but the prompt requests a specific UI "Collapsible Chain of Thought". 
-           // Prompt engineering is more reliable for custom UI formatting like <thinking> tags.
-           thinkingConfig: { thinkingBudget: 1024 } // Giving it some budget to think, even if we enforce tags via prompt
-        } : {})
+        systemInstruction: systemInstruction,
+        thinkingConfig: modelType === ModelType.REASONING ? { thinkingBudget: 1024 } : undefined,
       },
     });
 
-    const resultStream = await chat.sendMessageStream({
-      message: { parts }
+    const result = await chat.sendMessageStream({
+      message: currentMessageParts 
     });
 
-    for await (const chunk of resultStream) {
-      const responseChunk = chunk as GenerateContentResponse;
-      if (responseChunk.text) {
-        onChunk(responseChunk.text);
+    for await (const chunk of result) {
+      const text = chunk.text;
+      if (text) {
+        onChunk(text);
       }
     }
+    
+    onComplete();
   } catch (error) {
-    console.error("Gemini Error:", error);
-    onChunk("\n\n[System Error: Unable to generate response. Please try again.]");
+    console.error("Gemini API Error:", error);
+    onError(error instanceof Error ? error : new Error("Unknown error occurred"));
   }
 };

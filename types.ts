@@ -1,40 +1,34 @@
-export enum Sender {
-  User = 'user',
-  Model = 'model',
+export enum Role {
+  USER = 'user',
+  MODEL = 'model'
 }
 
 export enum ModelType {
-  Lite = 'lite',
-  Pro = 'pro',
+  FAST = 'gemini-3-flash-preview',
+  REASONING = 'gemini-3-pro-preview'
+}
+
+export interface Attachment {
+  name: string;
+  type: string; // MIME type (e.g., 'image/png', 'application/pdf')
+  data: string; // Base64 encoded string
+  size: number;
 }
 
 export interface Message {
   id: string;
-  text: string;
-  sender: Sender;
-  timestamp: number;
-  // Specific to Model messages
+  role: Role;
+  content: string;
+  attachment?: Attachment; // Added real attachment support
+  thinking?: string;
   isThinking?: boolean;
-  thinkingContent?: string; // Content inside <thinking> tags
-  finalContent?: string;    // Content after <thinking> tags
-  modelUsed?: ModelType;
-  attachments?: FileAttachment[];
-}
-
-export interface FileAttachment {
-  name: string;
-  type: string;
-  data: string; // base64
+  timestamp: number;
 }
 
 export interface ChatSession {
   id: string;
   title: string;
-  preview: string;
-  timestamp: number;
-}
-
-export interface AppSettings {
-  language: 'ar' | 'en';
-  direction: 'rtl' | 'ltr';
+  messages: Message[];
+  model: ModelType;
+  lastUpdated: number;
 }
